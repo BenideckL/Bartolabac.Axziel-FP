@@ -1,0 +1,1773 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
+namespace CafeInventoryAndSalesManagementSystem
+{
+    // FOR ACCOUNTS NA PART
+    public class User
+    {
+        public string Username { get; set; }
+        public string Password { get; set; }
+        public string Role { get; set; }
+
+        public User(string username, string password, string role)
+        {
+            Username = username;
+            Password = password;
+            Role = role;
+        }
+    }
+
+    public class AccountManager
+    {
+        private List<User> users = new List<User>();
+        private const string UsersFilePath = "users.txt";
+        private User currentUser;
+
+        public void CreateAccount(string username, string password, string role)
+        {
+            if (users.Any(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
+            {
+                Console.WriteLine("Username already exists!");
+                return;
+            }
+
+            users.Add(new User(username, password, role));
+            SaveUsers();
+            Console.WriteLine("Account created successfully!");
+        }
+
+        public AccountManager()
+        {
+            LoadUsers();
+            if (!users.Any())
+            {
+                CreateAccount("Owner", "owner123", "Owner");
+            }
+        }
+
+        public User CurrentUser => currentUser;
+
+        public bool Login(string username, string password)
+        {
+            currentUser = users.FirstOrDefault(u => u.Username.Equals(username) && u.Password == password);
+
+            return currentUser != null;
+        }
+
+        public void Logout()
+        {
+            currentUser = null;
+        }
+
+        public void ManageAccounts()
+        {
+            while (true)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("===================");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(" ACCOUNT MANAGEMENT ");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("===================\n");
+                Console.ResetColor();
+                Console.WriteLine("\n1. Create Staff Account");
+                Console.WriteLine("2. View All Accounts");
+                Console.WriteLine("3. Remove Account");
+                Console.WriteLine("4. Back to Main Menu");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("\n==========================================================");
+                Console.ResetColor();
+                int choice;
+
+                Console.Write("\nEnter your choice (1-4): ");
+                if (!int.TryParse(Console.ReadLine(), out choice) || choice > 4 || choice < 1)
+                {
+                    Console.WriteLine("Error: Invalid input. Please enter a number between 1-4.");
+                    Console.WriteLine("\nPress any key to continue...");
+                    Console.ReadKey();
+                    continue;
+                }
+
+                switch (choice)
+                {
+                    case 1:
+                        CreateStaffAccount();
+                        break;
+                    case 2:
+                        ViewAccounts();
+                        break;
+                    case 3:
+                        RemoveAccount();
+                        break;
+                    case 4:
+                        return;
+                    default:
+                        Console.WriteLine("Error: Invalid choice. Please enter a numerical value.");
+                        break;
+                }
+
+                Console.WriteLine("\nPress any key to continue...");
+                Console.ReadKey();
+            }
+        }
+
+        private void CreateStaffAccount()
+        {
+            Console.Write("\nEnter new username: ");
+            string username = Console.ReadLine();
+            Console.Write("Enter password: ");
+            string password = Console.ReadLine();
+            CreateAccount(username, password, "Staff");
+        }
+
+        private void ViewAccounts()
+        {
+            Console.WriteLine("\n================ CURRENT ACCOUNTS ================\n");
+            foreach (var user in users)
+            {
+                Console.WriteLine($"Username: {user.Username, -7} | Role: {user.Role}");
+            }
+        }
+
+        private void RemoveAccount()
+        {
+            ViewAccounts();
+            Console.Write("\nEnter username to remove: ");
+            string username = Console.ReadLine();
+
+            var userToRemove = users.FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+
+            if (userToRemove == null)
+            {
+                Console.WriteLine("Account not found!");
+                return;
+            }
+
+            if (userToRemove.Role == "Owner" && users.Count(u => u.Role == "Owner") == 1)
+            {
+                Console.WriteLine("Cannot remove the last owner account!");
+                return;
+            }
+
+            users.Remove(userToRemove);
+            SaveUsers();
+            Console.WriteLine("Account removed successfully!");
+        }
+
+        private void LoadUsers()
+        {
+            if (File.Exists(UsersFilePath))
+            {
+                try
+                {
+                    using (StreamReader reader = new StreamReader(UsersFilePath))
+                    {
+                        string line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            string[] parts = line.Split(',');
+                            if (parts.Length == 3)
+                            {
+                                users.Add(new User(parts[0], parts[1], parts[2]));
+                            }
+                        }
+                    }
+                }
+                catch (IOException ex)
+                {
+                    Console.WriteLine($"Error loading users: {ex.Message}");
+                }
+            }
+        }
+
+        private void SaveUsers()
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(UsersFilePath))
+                {
+                    foreach (var user in users)
+                    {
+                        writer.WriteLine($"{user.Username},{user.Password},{user.Role}");
+                    }
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error saving users: {ex.Message}");
+            }
+        }
+    }
+
+    // FOR THE CAFE INVENTORY AND SYSTEM SALES SYSTEM PROPER
+
+    public abstract class Product
+    {
+        public string Name { get; set; }
+        public string Category { get; set; }
+        public double Price { get; set; }
+        public int Quantity { get; set; }
+
+        public abstract void DisplayProductInfo(bool writeToFile, StreamWriter writer);
+
+        public void UpdateQuantity(int amount)
+        {
+            if (Quantity + amount >= 0)
+            {
+                Quantity += amount;
+                return;
+            }
+
+            Console.WriteLine("Not enough stock to update quantity.");
+        }
+    }
+
+    public class Item : Product
+    {
+        public Item(string name, string category, double price, int quantity)
+        {
+            Name = name;
+            Category = category;
+            Price = price;
+            Quantity = quantity;
+        }
+
+        public override void DisplayProductInfo(bool writeToFile, StreamWriter writer)
+        {
+            if (writeToFile)
+            {
+                writer.WriteLine($"| {Name,-28} | P{Price,-9:F2} | {Quantity,-10} |");
+            }
+            else
+            {
+                Console.WriteLine($"| {Name,-28} | P{Price,-9:F2} | {Quantity,-10} |");
+            }
+        }
+    }
+
+    public class Sale
+    {
+        public string ItemName { get; set; }
+        public int QuantitySold { get; set; }
+        public double UnitPrice { get; set; }
+        public double Subtotal => QuantitySold * UnitPrice; // gi-calculate dynamically
+        public DateTime SaleDate { get; set; }
+
+        public Sale(string itemName, int quantitySold, double unitPrice)
+        {
+            ItemName = itemName;
+            QuantitySold = quantitySold;
+            UnitPrice = unitPrice;
+            SaleDate = DateTime.Now;
+        }
+
+        public void DisplaySale(bool writeToFile, StreamWriter writer)
+        {
+            if (writeToFile)
+            {
+                writer.WriteLine($"| {ItemName,-26} | {QuantitySold,-15} | P{Subtotal,-11:F2} | {SaleDate,-25} |");
+            }
+            else
+            {
+                Console.WriteLine($"| {ItemName,-26} | {QuantitySold,-15} | P{Subtotal,-11:F2} | {SaleDate,-25} |");
+            }
+        }
+    }
+
+    public class CafeInventorySystem : Item
+    {
+        private List<Item> inventory = new List<Item>();
+        private const string InventoryFilePath = "inventory.txt";
+        private const string DisplayInventoryPath = "DisplayInventory.txt";
+        private const string RecordAddedItemPath = "LogAddedItem.txt";
+        private const string RecordRemovedItemPath = "LogRemovedItem.txt";
+        private const string RecordUpdatedItemPath = "LogUpdatedItem.txt";
+
+        public CafeInventorySystem() : base("", "", 0, 0)
+        {
+            LoadInventory();
+        }
+
+        public Item FindItem(string itemName)
+        {
+            var findItem = inventory.Find(item => item.Name.Equals(itemName, StringComparison.OrdinalIgnoreCase));
+
+            if (findItem == null)
+            {
+                return new Item("", "", 0.0, 0);
+            }
+
+            return findItem;
+        }
+
+        public void AddItem()
+        {
+            string name;
+            string category;
+
+            while (true)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("====================");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(" ADDING AN ITEM TO THE INVENTORY ");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("====================");
+                Console.ResetColor();
+
+                while (true)
+                {
+                    Console.Write("\n\nEnter item name (type 'x' to cancel): ");
+                    name = Console.ReadLine().Trim();
+
+                    if (name.Equals("x", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine("Addition of item cancelled.\n");
+                        return;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        Console.WriteLine("Error: Item name cannot be empty or just whitespace.\n");
+                        Console.WriteLine("Press any key to try again...");
+                        Console.ReadKey();
+                        Console.Clear();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.Write(" ADDING AN ITEM TO THE INVENTORY ");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        continue;
+                    }
+
+                    if (inventory.Exists(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        Console.WriteLine($"Error: Item '{name}' already exists in the inventory. Please enter a unique item.\n");
+                        Console.WriteLine("Press any key to try again...");
+                        Console.ReadKey();
+                        Console.Clear();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.Write(" ADDING AN ITEM TO THE INVENTORY ");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        continue;
+                    }
+
+                    break;
+                }
+
+                while (true)
+                {
+                    Console.Write("Enter category: ");
+                    category = Console.ReadLine().Trim();
+
+                    if (string.IsNullOrWhiteSpace(category))
+                    {
+                        Console.WriteLine("Error: Category cannot be empty or just whitespace.\n");
+                        Console.WriteLine("Press any key to try again...");
+                        Console.ReadKey();
+                        Console.Clear();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.Write(" ADDING AN ITEM TO THE INVENTORY ");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        Console.WriteLine($"Item Name: {name}");
+                        continue;
+                    }
+
+                    break;
+                }
+
+                double price;
+                while (true)
+                {
+                    Console.Write("Enter price: P");
+                    if (double.TryParse(Console.ReadLine(), out price) && price > 0)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Error: Please enter a valid price greater than 0.\n");
+                        Console.ReadKey();
+                        Console.Clear();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.Write(" ADDING AN ITEM TO THE INVENTORY ");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        Console.WriteLine($"Item Name: {name}");
+                        Console.WriteLine($"Category: {category}");
+                    }
+                }
+
+                int quantity;
+                while (true)
+                {
+                    Console.Write("Enter quantity: ");
+                    if (int.TryParse(Console.ReadLine(), out quantity) && quantity > 0)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Error: Please enter a valid quantity greater than 0.\n");
+                        Console.Write("Press any key to try again...");
+                        Console.ReadKey();
+                        Console.Clear();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.Write(" ADDING AN ITEM TO THE INVENTORY ");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        Console.WriteLine($"Item Name: {name}");
+                        Console.WriteLine($"Category: {category}");
+                        Console.WriteLine($"Price: P{price:F2}");
+                    }
+                }
+
+                var NewItem = new Item(name, category, price, quantity);
+                inventory.Add(NewItem);
+                LogAddedItem(NewItem);
+                Console.WriteLine("Item added successfully!\n");
+                DisplayInventory();
+                SaveInventory();
+
+                Console.Write("\nDo you want to add another item? (y/n): ");
+                string continueAdding = Console.ReadLine();
+                if (!continueAdding.Equals("y", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+
+        private void LogAddedItem(Item item)
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(RecordAddedItemPath, true))
+                {
+                    writer.WriteLine($"{DateTime.Now} - Added Item: {item.Name}, Category: {item.Category}, Price: P{item.Price:F2}, Quantity: {item.Quantity}");
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error logging the added item: {ex.Message}");
+            }
+        }
+
+        public void UpdateItem()
+        {
+            while (true)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("==========");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(" UPDATING AN ITEM FROM THE INVENTORY ");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("===========\n");
+                Console.ResetColor();
+                DisplayInventory();
+
+                Console.Write("\nEnter the name of the item to update (type 'x' to cancel): ");
+                string name = Console.ReadLine();
+
+                if (string.Equals(name, "x", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine("Update cancelled.");
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    Console.WriteLine("Error: Item name cannot be empty or just whitespace.\n");
+                    Console.WriteLine("Press any key to try again...");
+                    Console.ReadKey();
+                    continue;
+                }
+
+                var item = inventory.Find(i => i.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+                if (item != null)
+                {
+                    while (true)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("\n==========");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.Write(" WHAT WOULD YOU LIKE TO UPDATE? ");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("==========\n");
+                        Console.ResetColor();
+                        Console.WriteLine("\n1. Quantity");
+                        Console.WriteLine("2. Price");
+                        Console.WriteLine("3. Both");
+                        Console.WriteLine("4. Cancel");
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("\n====================================================");
+                        Console.ResetColor();
+                        Console.Write("\nEnter a number from 1-4: ");
+                        int choice;
+
+                        while (true)
+                        {
+                            if (!int.TryParse(Console.ReadLine(), out choice) || choice < 1 || choice > 4)
+                            {
+                                Console.Write("Error: Invalid choice. Please enter a number between (1-4): ");
+                                continue;
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+
+                        bool updateSuccessful = false;
+                        switch (choice)
+                        {
+                            case 1:
+                                while (true)
+                                {
+                                    Console.Write("\nEnter the quantity to add/remove (add a negative sign for remove): ");
+
+                                    if (int.TryParse(Console.ReadLine(), out int quantity))
+                                    {
+                                        int newQuantity = item.Quantity + quantity;
+
+                                        if (newQuantity < 0)
+                                        {
+                                            Console.WriteLine($"Error: Not enough stock to remove {Math.Abs(quantity)} items. Current stock is {item.Quantity}.");
+                                        }
+                                        else
+                                        {
+                                            int oldQuantity = item.Quantity;
+                                            item.Quantity = newQuantity;
+                                            LogUpdatedItem(item, "Quantity", oldQuantity.ToString(), item.Quantity.ToString());
+                                            Console.WriteLine("Item quantity updated successfully!");
+                                            updateSuccessful = true;
+                                            break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Console.WriteLine("Error: Invalid quantity input.");
+                                    }
+                                }
+                                break;
+
+                            case 2:
+                                while (true)
+                                {
+                                    Console.Write("\nEnter the new price: P");
+
+                                    if (double.TryParse(Console.ReadLine(), out double newPrice) && newPrice > 0)
+                                    {
+                                        double oldPrice = item.Price;
+                                        item.Price = newPrice;
+                                        LogUpdatedItem(item, "Price", $"P{oldPrice:F2}", $"P{newPrice:F2}");
+                                        Console.WriteLine("Item price updated successfully!");
+                                        updateSuccessful = true;
+                                        break;
+                                    }
+                                    else
+                                    {
+                                        Console.WriteLine("Error: Invalid price input. Please enter a numerical value, or a price that's greater than 0.");
+                                    }
+                                }
+                                break;
+
+                            case 3:
+                                while (true)
+                                {
+                                    Console.Write("\nEnter the quantity to add/remove (add a negative sign for remove): ");
+                                    if (int.TryParse(Console.ReadLine(), out int quantity))
+                                    {
+                                        int newQuantity = item.Quantity + quantity;
+
+                                        if (newQuantity < 0)
+                                        {
+                                            Console.WriteLine($"Error: Not enough stock to remove {Math.Abs(quantity)} items. Current stock is {item.Quantity}.");
+                                        }
+                                        else
+                                        {
+                                            int oldQuantity = item.Quantity;
+                                            item.Quantity = newQuantity;
+                                            LogUpdatedItem(item, "Quantity", oldQuantity.ToString(), item.Quantity.ToString());
+                                            Console.WriteLine("Item quantity updated successfully!");
+                                            break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Console.WriteLine("Error: Invalid quantity input.");
+                                    }
+                                }
+
+                                while (true)
+                                {
+                                    Console.Write("\nEnter the new price: P");
+                                    if (double.TryParse(Console.ReadLine(), out double newPrice) && newPrice > 0)
+                                    {
+                                        double oldPrice = item.Price;
+                                        item.Price = newPrice;
+                                        LogUpdatedItem(item, "Price", $"P{oldPrice:F2}", $"P{newPrice:F2}");
+                                        Console.WriteLine("Item price updated successfully!");
+                                        updateSuccessful = true;
+                                        break;
+                                    }
+                                    else
+                                    {
+                                        Console.WriteLine("Error: Invalid price input. Please enter a numerical value, or a price that's greater than 0.");
+                                    }
+                                }
+                                break;
+
+                            case 4:
+                                Console.WriteLine("Update cancelled.");
+                                return;
+                        }
+
+                        if (updateSuccessful)
+                        {
+                            SaveInventory();
+                            break;
+                        }
+                    }
+
+                    Console.Write("\nDo you want to update another item? (y/n): ");
+                    string continueUpdating = Console.ReadLine();
+                    if (!continueUpdating.Equals("y", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return; // Exit the method if the user doesn't want to update more items
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Item not found.");
+                    Console.WriteLine("\nPress any key to try again...");
+                    Console.ReadKey();
+                }
+            }
+        }
+
+        private void LogUpdatedItem(Item item, string updateType, string oldValue, string newValue)
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(RecordUpdatedItemPath, true))
+                {
+                    writer.WriteLine($"{DateTime.Now} - Updated Item: {item.Name}, {updateType} changed from {oldValue} to {newValue}");
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error logging the updated item: {ex.Message}");
+            }
+        }
+
+        public void RemoveItem()
+        {
+            while (true)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("==========");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(" REMOVING AN ITEM FROM THE INVENTORY ");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("===========\n");
+                Console.ResetColor();
+                DisplayInventory();
+
+                Console.Write("\nEnter the name of the item to remove (type 'x' to cancel): ");
+                string name = Console.ReadLine();
+
+
+                if (string.Equals(name, "x", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine("Item removal cancelled.");
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    Console.WriteLine("Error: Item name cannot be empty or just whitespace.\n");
+                    Console.WriteLine("Press any key to try again...");
+                    Console.ReadKey();
+                    continue;
+                }
+
+                var item = inventory.Find(i => i.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+                if (item == null)
+                {
+                    Console.WriteLine($"Item '{name}' not found!\n");
+                    Console.WriteLine("Press any key to try again...");
+                    Console.ReadKey();
+                    continue;
+                }
+
+                Console.Write($"\nAre you sure you want to remove '{item.Name}' from the inventory? (y/n): ");
+                string confirm = Console.ReadLine();
+
+                if (confirm.Equals("y", StringComparison.OrdinalIgnoreCase))
+                {
+                    inventory.Remove(item);
+                    LogRemovedItem(item);
+                    Console.WriteLine("Item removed successfully!\n");
+                    SaveInventory();
+                }
+                else
+                {
+                    Console.WriteLine("Item removal cancelled.\n");
+                }
+
+                Console.Write("Do you want to remove another item? (y/n): ");
+                string continueRemoving = Console.ReadLine();
+
+                if (!continueRemoving.Equals("y", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine("Exiting item removal.");
+                    return;
+                }
+            }
+        }
+
+        private void LogRemovedItem(Item item)
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(RecordRemovedItemPath, true))
+                {
+                    writer.WriteLine($"{DateTime.Now} - Removed Item: {item.Name}, Category: {item.Category}, Price: P{item.Price:F2}, Quantity: {item.Quantity}");
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error logging the removed item: {ex.Message}");
+            }
+        }
+
+        public void SearchItem()
+        {
+            while (true)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("=======================");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(" SEARCHING AN ITEM IN THE INVENTORY ");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("========================\n");
+                Console.ResetColor();
+
+                Console.Write("\nEnter the name of the item to search (type 'x' to cancel): ");
+                string name = Console.ReadLine();
+
+                if (string.Equals(name, "x", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine("Item searching cancelled.");
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    Console.WriteLine("Error: Item name cannot be empty or just whitespace.\n");
+                    Console.WriteLine("Press any key to try again...");
+                    Console.ReadKey();
+                    continue;
+                }
+
+                var item = inventory.Find(i => i.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                if (item != null)
+                {
+                    Console.WriteLine("\n------- Item Found -------");
+                    Console.WriteLine($"| Item Name: {item.Name}");
+                    Console.WriteLine($"| Category: {item.Category}");
+                    Console.WriteLine($"| Price: P{item.Price:F2}");
+                    Console.WriteLine($"| Quantity: {item.Quantity}");
+                }
+                else
+                {
+                    Console.WriteLine($"\nItem {name} not found in the inventory.");
+                }
+
+                Console.Write("\nDo you want to search another item? (y/n): ");
+                string continueSearching = Console.ReadLine();
+                if (!continueSearching.Equals("y", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+
+        public void DisplayInventory()
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write("\n===================");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write(" CURRENT INVENTORY ");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write("====================\n");
+            Console.ResetColor();
+
+
+            if (inventory.Count > 0)
+            {
+                var categoryGroups = new Dictionary<string, List<Item>>();
+
+                // Group items by category
+                foreach (var item in inventory)
+                {
+                    if (!categoryGroups.ContainsKey(item.Category))
+                    {
+                        categoryGroups[item.Category] = new List<Item>();
+                    }
+                    categoryGroups[item.Category].Add(item);
+                }
+
+                // Display each category and its items
+                foreach (var category in categoryGroups.Keys)
+                {
+                    int lineWidth = 58; // Adjust line width for consistent formatting
+                    int padding = (lineWidth - category.Length - 2) / 2; // Subtract 2 for spaces around category name
+                    string centeredCategory = new string('-', padding) + $" {category} " + new string('-', padding);
+
+                    // Handle odd line width for perfect centering
+                    if (centeredCategory.Length < lineWidth)
+                    {
+                        centeredCategory += "-";
+                    }
+
+                    Console.WriteLine($"\n{centeredCategory}");
+                    Console.WriteLine($"{"| Item",-30} | {"Price",-10} | {"Quantity",-10} |");
+                    Console.WriteLine(new string('-', lineWidth));
+
+                    foreach (var item in categoryGroups[category])
+                    {
+                        item.DisplayProductInfo(false, null);
+                    }
+
+                    Console.WriteLine(new string('-', lineWidth));
+                }
+            }
+            else
+            {
+                Console.WriteLine("No items in inventory.");
+            }
+        }
+
+        private void LoadInventory()
+        {
+            if (File.Exists(InventoryFilePath))
+            {
+                try
+                {
+                    using (StreamReader reader = new StreamReader(InventoryFilePath))
+                    {
+                        string line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            var parts = line.Split(',');
+                            if (parts.Length == 4)
+                            {
+                                string name = parts[0];
+                                string category = parts[1];
+                                double price = double.Parse(parts[2]);
+                                int quantity = int.Parse(parts[3]);
+
+                                inventory.Add(new Item(name, category, price, quantity));
+                            }
+                        }
+                    }
+                }
+                catch (IOException ex)
+                {
+                    Console.WriteLine($"Error loading inventory: {ex.Message}");
+                }
+            }
+        }
+
+        public void SaveInventory()
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(InventoryFilePath))
+                {
+                    foreach (var item in inventory)
+                    {
+                        writer.WriteLine($"{item.Name},{item.Category},{item.Price},{item.Quantity}");
+                    }
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error saving inventory: {ex.Message}");
+            }
+        }
+
+        public void DisplayInventoryToFile()
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(DisplayInventoryPath))
+                {
+                    writer.WriteLine("\n=================== CURRENT INVENTORY ====================");
+
+                    if (inventory.Count > 0)
+                    {
+                        var categoryGroups = new Dictionary<string, List<Item>>();
+
+                        // Group items by category
+                        foreach (var item in inventory)
+                        {
+                            if (!categoryGroups.ContainsKey(item.Category))
+                            {
+                                categoryGroups[item.Category] = new List<Item>();
+                            }
+                            categoryGroups[item.Category].Add(item);
+                        }
+
+                        // Display each category and its items
+                        foreach (var category in categoryGroups.Keys)
+                        {
+                            int lineWidth = 58; // Adjust line width for consistent formatting
+                            int padding = (lineWidth - category.Length - 2) / 2; // Subtract 2 for spaces around category name
+                            string centeredCategory = new string('-', padding) + $" {category} " + new string('-', padding);
+
+                            // Handle odd line width for perfect centering
+                            if (centeredCategory.Length < lineWidth)
+                            {
+                                centeredCategory += "-";
+                            }
+
+                            writer.WriteLine($"\n{centeredCategory}");
+                            writer.WriteLine($"{"| Item",-30} | {"Price",-10} | {"Quantity",-10} |");
+                            writer.WriteLine(new string('-', lineWidth));
+
+                            foreach (var item in categoryGroups[category])
+                            {
+                                item.DisplayProductInfo(true, writer);
+                            }
+
+                            writer.WriteLine(new string('-', lineWidth));
+                        }
+                    }
+                    else
+                    {
+                        writer.WriteLine("No items in inventory.");
+                    }
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error saving inventory display: {ex.Message}");
+            }
+        }
+    }
+
+    public class CafeSalesSystem : Sale
+    {
+        private List<Sale> sales = new List<Sale>();
+        private const string SalesFilePath = "sales.txt";
+        private const string SalesReportPath = "GenerateSalesReport.txt";
+        private const string LogReceiptsPath = "OrderReceipts.txt";
+        private CafeInventorySystem inventorySystem;
+
+        public CafeSalesSystem(CafeInventorySystem inventory) : base("", 0, 0)
+        {
+            inventorySystem = inventory;
+            LoadSales();
+        }
+
+        public void SellItem(CafeInventorySystem inventorySystem)
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write("====================");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write(" SELLING AN ITEM ");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write("=====================");
+            Console.ResetColor();
+            Console.Write("\n");
+            inventorySystem.DisplayInventory();
+
+            double totalSales = 0;
+            List<Sale> currentTransaction = new List<Sale>(); // Track current transaction sales
+
+            while (true)
+            {
+                Item item = null;
+
+                // Loop for item selection
+                while (true)
+                {
+                    Console.Write("\nEnter the name of the item to sell (or type 'x' to cancel): ");
+                    string name = Console.ReadLine();
+
+                    if (name.Equals("x", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine("Sale process cancelled.\n");
+                        return;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        Console.WriteLine("Error: Item name cannot be empty or just whitespace.\n");
+                        Console.WriteLine("Press any key to try again...");
+                        Console.ReadKey();
+                        Console.Clear();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("====================");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.Write(" SELLING AN ITEM ");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("=====================");
+                        Console.ResetColor();
+                        inventorySystem.DisplayInventory();
+                        continue;
+                    }
+
+                    item = inventorySystem.FindItem(name);
+
+                    if (item != null && item.Quantity > 0)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Item not found or out of stock. Please try again.\n");
+                    }
+                }
+
+                // Loop for quantity input
+                while (true)
+                {
+                    Console.Write("Enter the quantity to sell: ");
+
+                    if (!int.TryParse(Console.ReadLine(), out int quantity) || quantity <= 0)
+                    {
+                        Console.WriteLine("Error: Please enter a valid quantity.");
+                        continue;
+                    }
+
+                    if (quantity <= item.Quantity)
+                    {
+                        double unitPrice = item.Price;
+                        double subtotal = quantity * unitPrice;
+                        item.UpdateQuantity(-quantity);
+
+                        // Add sale to the current transaction
+                        Sale sale = new Sale(item.Name, quantity, item.Price);
+                        currentTransaction.Add(sale);
+
+                        // Add sale to the global sales list
+                        sales.Add(sale);
+
+                        Console.WriteLine($"Sold {quantity} of {item.Name}.");
+                        Console.WriteLine($"Subtotal: P{subtotal:F2}\n");
+
+                        totalSales += subtotal;
+                        inventorySystem.SaveInventory();
+                        SaveSales();
+                        break;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Not enough quantity in stock. Please enter a lower quantity.\n");
+                    }
+                }
+
+                Console.Write("Do you want to sell another item? (y/n): ");
+                string continueSelling = Console.ReadLine();
+                if (!continueSelling.Equals("y", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"\nTotal: P{totalSales:F2}");
+
+                    double receivedPayment = 0;
+                    double change = 0;
+
+                    while (true)
+                    {
+                        Console.Write("Enter the received payment: P");
+
+                        if (!double.TryParse(Console.ReadLine(), out receivedPayment) || receivedPayment <= 0)
+                        {
+                            Console.WriteLine("Invalid input. Please enter a valid payment amount.");
+                            continue;
+                        }
+
+                        if (receivedPayment >= totalSales)
+                        {
+                            change = receivedPayment - totalSales;
+                            Console.WriteLine($"Change: P{change:F2}");
+                            break;
+                        }
+                        else
+                        {
+                            Console.WriteLine("Please ensure the payment amount is sufficient.");
+                        }
+                    }
+                    GenerateReceipt(currentTransaction, totalSales, receivedPayment, change);
+                    break;
+                }
+            }
+
+            DisplaySalesReportToFile();
+        }
+
+        private void GenerateReceipt(List<Sale> currentTransaction, double total, double payment, double change)
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Write("==============================");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write(" RECEIPT ");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Write("=============================");
+            Console.ResetColor();
+            Console.Write("\n\n");
+
+            Console.WriteLine(new string('-', 68));
+            Console.WriteLine($"| {"Item",-25} | {"Quantity",-10} | {"Price",-10} | {"Subtotal",-10} |");
+            Console.WriteLine(new string('-', 68));
+
+            foreach (var sale in currentTransaction)
+            {
+                Console.WriteLine($"| {sale.ItemName,-25} | {sale.QuantitySold,-10} | {sale.UnitPrice,-10:F2} | {sale.Subtotal,-10:F2} |");
+            }
+
+            Console.WriteLine(new string('-', 68));
+            DateTime now = DateTime.Now;
+            Console.Write("TIME OF PURCHASE: ");
+            Console.WriteLine(now);
+            Console.WriteLine(new string('-', 68));
+            Console.WriteLine($"{"TOTAL:",-30} {total,-17:F2}");
+            Console.WriteLine($"{"PAYMENT:",-30} {payment,-17:F2}");
+            Console.WriteLine($"{"CHANGE:",-30} {change,-17:F2}");
+            Console.WriteLine("\nThank you for your purchase!\n");
+
+            try
+            {
+                using (StreamWriter writer = File.AppendText(LogReceiptsPath))
+                {
+                    writer.WriteLine("============================== RECEIPT =============================");
+
+                    writer.WriteLine(new string('-', 68));
+                    writer.WriteLine($"| {"Item",-25} | {"Quantity",-10} | {"Price",-10} | {"Subtotal",-10} |");
+                    writer.WriteLine(new string('-', 68));
+
+                    foreach (var sale in currentTransaction)
+                    {
+
+                        writer.WriteLine($"| {sale.ItemName,-25} | {sale.QuantitySold,-10} | {sale.UnitPrice,-10:F2} | {sale.Subtotal,-10:F2} |");
+                    }
+
+                    writer.WriteLine(new string('-', 68));
+                    writer.Write("TIME OF PURCHASE: ");
+                    writer.WriteLine(now);
+                    writer.WriteLine(new string('-', 68));
+                    writer.WriteLine($"{"TOTAL:",-30} {total,-17:F2}");
+                    writer.WriteLine($"{"PAYMENT:",-30} {payment,-17:F2}");
+                    writer.WriteLine($"{"CHANGE:",-30} {change,-17:F2}");
+                    writer.WriteLine("\nThank you for your purchase!\n");
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error logging sales receipts: {ex.Message}");
+            }
+        }
+
+        public void DisplaySales()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write("=================================");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write(" SALES SUMMARY FOR TODAY ");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write("=================================\n");
+            Console.ResetColor();
+            Console.Write("\n");
+
+            var today = DateTime.Today;
+            var todaySales = sales.Where(sale => sale.SaleDate.Date == today).ToList();
+
+            if (todaySales.Count > 0)
+            {
+                Console.WriteLine(new string('-', 91));
+                Console.WriteLine($"{"| Item",-28} | {"Quantity Sold",-15} | {"Total Price",-12} | {"Sale Date",-25} |");
+                Console.WriteLine(new string('-', 91));
+
+                double DailyTotal = 0;
+
+                foreach (var sale in todaySales)
+                {
+                    sale.DisplaySale(false, null);
+                    DailyTotal += sale.Subtotal;
+                }
+                Console.WriteLine(new string('-', 91));
+                Console.WriteLine($"Subtotal for today: P{DailyTotal:F2}\n");
+            }
+            else
+            {
+                Console.WriteLine("No sales recorded for today.");
+            }
+        }
+
+        public void GenerateSalesReport()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write("===================================");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write(" SALES REPORT BY DAY ");
+            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write("===================================");
+            Console.ResetColor();
+            Console.Write("\n");
+
+            if (sales.Count == 0)
+            {
+                Console.WriteLine("No sales recorded.");
+                return;
+            }
+
+            var salesByDay = sales.GroupBy(sale => sale.SaleDate.Date).OrderByDescending(group => group.Key);
+
+            foreach (var dayGroup in salesByDay)
+            {
+                Console.WriteLine($"\nDate: {dayGroup.Key:yyyy-MM-dd}");
+                Console.WriteLine(new string('-', 91));
+                Console.WriteLine($"{"| Item",-28} | {"Quantity Sold",-15} | {"Total Price",-12} | {"Sale Date",-25} |");
+                Console.WriteLine(new string('-', 91));
+
+                double DailyTotal = 0;
+
+                foreach (var sale in dayGroup)
+                {
+                    sale.DisplaySale(false, null);
+                    DailyTotal += sale.Subtotal;
+                }
+
+                Console.WriteLine(new string('-', 91));
+                Console.WriteLine($"Subtotal for {dayGroup.Key:yyyy-MM-dd}: P{DailyTotal:F2}\n");
+                Console.WriteLine(new string('=', 91));
+            }
+        }
+
+        public void SearchSalesByDate()
+        {
+            bool ContinueSearch = true;
+
+            while (ContinueSearch)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("==================================");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(" SEARCH SALES BY DATE ");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("===================================\n");
+                Console.ResetColor();
+
+                DateTime searchDate = DateTime.MinValue;
+                bool isValidDate = false;
+
+                // Loop until the user enters a valid date
+                while (!isValidDate)
+                {
+                    Console.Write("\nEnter the date to search for (yyyy-MM-dd) (type 'x' to cancel): ");
+                    string inputDate = Console.ReadLine();
+
+                    if (inputDate.Equals("x", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine("Searching of sale date cancelled.\n");
+                        return;
+                    }
+
+                    // Attempt to parse the entered date
+                    if (DateTime.TryParse(inputDate, out searchDate))
+                    {
+                        isValidDate = true;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Error: Invalid date format. Please use the format yyyy-MM-dd.");
+                        Console.WriteLine("\nPress any key to try again...");
+                        Console.ReadKey();
+                        Console.Clear();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("==================================");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.Write(" SEARCH SALES BY DATE ");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("===================================\n");
+                        Console.ResetColor();
+                    }
+                }
+
+                // Filter sales by the entered date
+                var salesOnDate = sales.Where(sale => sale.SaleDate.Date == searchDate.Date).ToList();
+
+                if (salesOnDate.Count == 0)
+                {
+                    Console.WriteLine($"No sales recorded on {searchDate:yyyy-MM-dd}.");
+                }
+                else
+                {
+                    Console.WriteLine($"\nSales for {searchDate:yyyy-MM-dd}:");
+                    Console.WriteLine(new string('-', 91));
+                    Console.WriteLine($"{"| Item",-28} | {"Quantity Sold",-15} | {"Total Price",-12} | {"Sale Date",-25} |");
+                    Console.WriteLine(new string('-', 91));
+
+                    double totalSalesForDay = 0;
+
+                    foreach (var sale in salesOnDate)
+                    {
+                        sale.DisplaySale(false, null);
+                        totalSalesForDay += sale.Subtotal;
+                    }
+
+                    Console.WriteLine(new string('-', 91));
+                    Console.WriteLine($"Total for {searchDate:yyyy-MM-dd}: P{totalSalesForDay:F2}\n");
+                    Console.WriteLine(new string('=', 91));
+                }
+
+                Console.Write("\nDo you want to search for another date? (y/n): ");
+                var response = Console.ReadLine()?.ToLower();
+
+                if (response != "y")
+                {
+                    ContinueSearch = false;
+                    Console.WriteLine("\nPress any key to continue...");
+                    Console.ReadKey();
+                }
+            }
+        }
+
+        public void GeneralDailySalesReport()
+        {
+            while (true)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("=========================");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(" GENERAL DAILY SALES REPORT ");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("=========================\n");
+                Console.ResetColor();
+                Console.WriteLine("\n1. Display Daily Sales Report");
+                Console.WriteLine("2. Search Sales by Date");
+                Console.WriteLine("3. Back to Main Menu");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("\n==============================================================================");
+                Console.ResetColor();
+                Console.Write("\nEnter your choice (1-2): ");
+                int choice;
+                if (!int.TryParse(Console.ReadLine(), out choice) || choice < 1 || choice > 3)
+                {
+                    Console.WriteLine("Error: Invalid input. Please enter a number between 1-3 only.");
+                    Console.WriteLine("\nPress any key to continue...");
+                    Console.ReadKey();
+                    continue;
+                }
+
+                switch (choice)
+                {
+                    case 1:
+                        GenerateSalesReport();
+                        Console.ReadKey();
+                        break;
+                    case 2:
+                        SearchSalesByDate();
+                        break;
+                    case 3:
+                        Console.WriteLine("\nViewing of sales report cancelled.");
+                        return;
+                }
+            }
+        }
+
+        private void LoadSales()
+        {
+            if (File.Exists(SalesFilePath))
+            {
+                try
+                {
+                    using (StreamReader reader = new StreamReader(SalesFilePath))
+                    {
+                        string line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            var parts = line.Split(',');
+                            if (parts.Length == 4)
+                            {
+                                string itemName = parts[0];
+                                int quantitySold = int.Parse(parts[1]);
+                                double totalPrice = double.Parse(parts[2]);
+                                DateTime saleDate = DateTime.Parse(parts[3]);
+
+                                sales.Add(new Sale(itemName, quantitySold, totalPrice) { SaleDate = saleDate });
+                            }
+                        }
+                    }
+                }
+                catch (IOException ex)
+                {
+                    Console.WriteLine($"Error loading sales: {ex.Message}");
+                }
+            }
+        }
+
+        private void SaveSales()
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(SalesFilePath))
+                {
+                    foreach (var sale in sales)
+                    {
+                        writer.WriteLine($"{sale.ItemName},{sale.QuantitySold},{sale.UnitPrice},{sale.SaleDate}");
+                    }
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error saving sales: {ex.Message}");
+            }
+        }
+
+        public void DisplaySalesReportToFile()
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(SalesReportPath))
+                {
+                    writer.WriteLine("=================================== SALES REPORT BY DAY ===================================");
+
+                    if (sales.Count == 0)
+                    {
+                        writer.WriteLine("No sales recorded.");
+                        return;
+                    }
+
+                    var salesByDay = sales.GroupBy(sale => sale.SaleDate.Date).OrderByDescending(group => group.Key);
+
+                    foreach (var dayGroup in salesByDay)
+                    {
+                        writer.WriteLine($"\nDate: {dayGroup.Key:yyyy-MM-dd}");
+                        writer.WriteLine(new string('-', 91));
+                        writer.WriteLine($"{"| Item",-28} | {"Quantity Sold",-15} | {"Total Price",-12} | {"Sale Date",-25} |");
+                        writer.WriteLine(new string('-', 91));
+
+                        double dailyTotal = 0;
+
+                        foreach (var sale in dayGroup)
+                        {
+                            sale.DisplaySale(true, writer);
+                            dailyTotal += sale.Subtotal;
+                        }
+
+                        writer.WriteLine(new string('-', 91));
+                        writer.WriteLine($"Subtotal for {dayGroup.Key:yyyy-MM-dd}: P{dailyTotal:F2}\n");
+                        writer.WriteLine(new string('=', 91));
+                    }
+
+                }
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"Error saving sales report: {ex.Message}");
+            }
+        }
+    }
+
+    class Program
+    {
+        public static string ReadPassword()
+        {
+            string password = string.Empty;
+            ConsoleKey key;
+
+            do
+            {
+                var keyInfo = Console.ReadKey(intercept: true);
+                key = keyInfo.Key;
+
+                if (key == ConsoleKey.Backspace && password.Length > 0)
+                {
+                    password = password[..^1];
+                    Console.Write("\b \b");
+                }
+                else if (!char.IsControl(keyInfo.KeyChar))
+                {
+                    password += keyInfo.KeyChar;
+                    Console.Write("*");
+                }
+            } while (key != ConsoleKey.Enter);
+
+            Console.WriteLine();
+            return password;
+        }
+
+        static void Main(string[] args)
+        {
+            var accountManager = new AccountManager();
+            var inventorySystem = new CafeInventorySystem();
+            var salesSystem = new CafeSalesSystem(inventorySystem);
+
+            while (true)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("=========================");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(" MINI CAFE INVENTORY AND SALES MANAGEMENT ");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("=========================\n");
+                Console.ResetColor();
+                Console.WriteLine("\n1. Login (Owner or Staff Account)");
+                Console.WriteLine("2. Exit");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("\n============================================================================================");
+                Console.ResetColor();
+                Console.Write("\nEnter your choice (1-2): ");
+
+                if (!int.TryParse(Console.ReadLine(), out int choice))
+                {
+                    Console.WriteLine("Invalid input. Please enter a number.");
+                    Console.WriteLine("\nPress any key to continue...");
+                    Console.ReadKey();
+                    continue;
+                }
+
+                switch (choice)
+                {
+                    case 1:
+                        Console.Write("\nUsername: ");
+                        string username = Console.ReadLine();
+                        Console.Write("Password: ");
+                        string password = ReadPassword();
+
+                        if (accountManager.Login(username, password))
+                        {
+                            Console.WriteLine($"\nWelcome, {username}!");
+                            Console.WriteLine("Press any key to continue...");
+                            Console.ReadKey();
+                            RunMainMenu(accountManager, inventorySystem, salesSystem);
+                        }
+                        else
+                        {
+                            Console.WriteLine("\nInvalid username or password!");
+                            Console.WriteLine("Press any key to continue...");
+                            Console.ReadKey();
+                        }
+                        break;
+
+                    case 2:
+                        Console.WriteLine("\nExiting...");
+                        return;
+
+                    default:
+                        Console.WriteLine("\nInvalid choice. Please select numbers between 1-2.");
+                        Console.WriteLine("Press any key to continue...");
+                        Console.ReadKey();
+                        break;
+                }
+            }
+        }
+
+        static void RunMainMenu(AccountManager accountManager, CafeInventorySystem inventorySystem, CafeSalesSystem salesSystem)
+        {
+            bool running = true;
+            while (running)
+            {
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("=========================");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(" MINI CAFE INVENTORY AND SALES MANAGEMENT ");
+                Console.ResetColor();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("=========================\n");
+                Console.ResetColor();
+
+                if (accountManager.CurrentUser.Role == "Owner") // Para sa owner
+                {
+                    Console.WriteLine("\n1. Add Item to Inventory");
+                    Console.WriteLine("2. Update Item in Inventory");
+                    Console.WriteLine("3. Remove Item from Inventory");
+                    Console.WriteLine("4. Sell Item");
+                    Console.WriteLine("5. Search Item");
+                    Console.WriteLine("6. Display Inventory");
+                    Console.WriteLine("7. Display Sales Summary");
+                    Console.WriteLine("8. Daily Sales Report");
+                    Console.WriteLine("9. Manage Accounts");
+                    Console.WriteLine("10. Logout");
+                }
+                else // Staff role
+                {
+                    Console.WriteLine("\n1. Sell Item");
+                    Console.WriteLine("2. Search Item");
+                    Console.WriteLine("3. Display Sales Summary");
+                    Console.WriteLine("4. Logout");
+                }
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("\n============================================================================================");
+                Console.ResetColor();
+                Console.Write("\nEnter your choice: ");
+                string input = Console.ReadLine();
+
+                if (!int.TryParse(input, out int choice))
+                {
+                    Console.WriteLine("Error: Invalid input. Please enter a number corresponding to you choice.");
+                    Console.WriteLine("\nPress any key to continue...");
+                    Console.ReadKey();
+                    continue;
+                }
+
+                if (accountManager.CurrentUser.Role == "Owner") // Owner 
+                {
+                    switch (choice)
+                    {
+                        case 1:
+                            inventorySystem.AddItem();
+                            inventorySystem.DisplayInventoryToFile();
+                            break;
+                        case 2:
+                            inventorySystem.UpdateItem();
+                            inventorySystem.DisplayInventoryToFile();
+                            break;
+                        case 3:
+                            inventorySystem.RemoveItem();
+                            inventorySystem.DisplayInventoryToFile();
+                            break;
+                        case 4:
+                            salesSystem.SellItem(inventorySystem);
+                            salesSystem.DisplaySalesReportToFile();
+                            break;
+                        case 5:
+                            inventorySystem.SearchItem();
+                            break;
+                        case 6:
+                            Console.Clear();
+                            inventorySystem.DisplayInventory();
+                            inventorySystem.DisplayInventoryToFile();
+                            break;
+                        case 7:
+                            salesSystem.DisplaySales();
+                            break;
+                        case 8:
+                            salesSystem.GeneralDailySalesReport();
+                            salesSystem.DisplaySalesReportToFile();
+                            break;
+                        case 9:
+                            accountManager.ManageAccounts();
+                            break;
+                        case 10:
+                            accountManager.Logout();
+                            running = false;
+                            break;
+                        default:
+                            Console.WriteLine("Error: Invalid choice. Please enter numerical values only.");
+                            break;
+                    }
+                }
+                else // Staff role
+                {
+                    switch (choice)
+                    {
+                        case 1:
+                            salesSystem.SellItem(inventorySystem);
+                            break;
+                        case 2:
+                            inventorySystem.SearchItem();
+                            break;
+                        case 3:
+                            salesSystem.DisplaySales();
+                            break;
+                        case 4:
+                            accountManager.Logout();
+                            running = false;
+                            break;
+                        default:
+                            Console.WriteLine("Error: Invalid choice. Please enter numerical values only.");
+                            break;
+                    }
+                }
+
+                if (running)
+                {
+                    Console.WriteLine("\nPress any key to continue...");
+                    Console.ReadKey();
+                }
+            }
+        }
+    }
+}
